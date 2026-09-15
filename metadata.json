@@ -1,0 +1,6 @@
+{
+  "name": "Alumni Verification Portal",
+  "description": "Direct Google Sheet-powered alumni record verification, comparison, and status tracking system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
