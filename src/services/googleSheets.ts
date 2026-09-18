@@ -63,7 +63,18 @@ export function cleanSearchUrl(val: string): string {
 const FIELD_ALIASES: Record<string, string[]> = {
   sNo: ['sno', 'slno', 'serialno', 'sn'],
   rollNumber: ['rollnumber', 'rollno', 'roll'],
-  assignedDate: ['assigneddate', 'assignmentdate', 'assignedon'],
+  assignedDate: [
+    'assigneddate',
+    'assigned_date',
+    'assigned date',
+    'assignmentdate',
+    'assignment_date',
+    'assignedon',
+    'assigned on',
+    'allocationdate',
+    'allocation_date',
+    'dateassigned',
+  ],
   assignedTo: ['assignedto', 'assignee', 'verifier'],
   customId: ['customid', 'id', 'alumniid', 'uid'],
   fullName: ['fullname', 'name', 'alumniname', 'alumni'],
@@ -114,9 +125,71 @@ const FIELD_ALIASES: Record<string, string[]> = {
   sourceChecked: ['sourcechecked', 'sourceschecked', 'source'],
   primarySource: ['primarysource'],
   verificationStatus: ['verificationstatus', 'status', 'verifystatus'],
+  actionDate: [
+    'actiondate',
+    'action_date',
+    'action date',
+    'dateaction',
+    'date_action',
+    'actiontakenon',
+    'actiontakendate',
+    'actioneddate',
+    'actiondateyyyymmdd',
+  ],
   anyRemark: ['anyremark', 'remark', 'remarks', 'comment', 'comments', 'verifierremark'],
-  l1Review: ['l1review', 'l1status'],
-  l1Comment: ['l1comment', 'l1comments'],
+  sentForUpdate: [
+    'sentforupdate',
+    'sent_for_update',
+    'sent for update',
+    'sentforupdates',
+    'sent_update',
+    'sentupdate',
+  ],
+  l1Review: [
+    'l1review',
+    'l1_review',
+    'l1 review',
+    'l1status',
+    'l1_status',
+    'l1 status',
+    'l1approver',
+    'l1decision',
+    'l1approval',
+  ],
+  l1Comment: [
+    'l1comment',
+    'l1_comment',
+    'l1 comment',
+    'l1comments',
+    'l1_comments',
+    'l1 comments',
+    'l1remark',
+    'l1remarks',
+  ],
+  l1VerificationDate: [
+    'l1verificationdate',
+    'l1_verification_date',
+    'l1 verification date',
+    'l1verifydate',
+    'l1_verify_date',
+    'l1 verification on',
+    'l1date',
+    'l1_date',
+    'l1 action date',
+    'l1actiondate',
+  ],
+  verifiedBy: [
+    'verifiedby',
+    'verified_by',
+    'verified by',
+    'verifieremail',
+    'verifiedbyemail',
+    'l1verifiedby',
+    'l1_verified_by',
+    'l1 verified by',
+    'l1verifier',
+    'verified_by_email',
+  ],
   l2Review: ['l2review', 'l2status'],
   l2Comment: ['l2comment', 'l2comments'],
 };
@@ -161,12 +234,19 @@ export async function fetchSheetMetadata(
     spreadsheetId
   )}?fields=properties.title,sheets.properties`;
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Unable to reach Google Sheets API (${err.message || 'Failed to fetch'}). Your access token may have expired or network was interrupted. Please reconnect your Google account.`
+    );
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -205,12 +285,19 @@ export async function fetchSheetRows(
     spreadsheetId
   )}/values/${range}?valueRenderOption=FORMATTED_VALUE`;
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Unable to read sheet from Google API (${err.message || 'Failed to fetch'}). Your access token may have expired. Please reconnect your Google account.`
+    );
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -293,7 +380,13 @@ export async function fetchSheetRows(
       'sourceChecked',
       'primarySource',
       'verificationStatus',
+      'actionDate',
       'anyRemark',
+      'l1Review',
+      'l1Comment',
+      'l1VerificationDate',
+      'verifiedBy',
+      'sentForUpdate',
     ]) {
       rawSnapshot[field] = getVal(row, field);
     }
@@ -310,6 +403,8 @@ export async function fetchSheetRows(
       department: getVal(row, 'department'),
       passingYear: getVal(row, 'passingYear'),
       ageApprox: getVal(row, 'ageApprox'),
+
+      sentForUpdate: getVal(row, 'sentForUpdate'),
 
       existingDesignation: getVal(row, 'existingDesignation'),
       existingOrganization: getVal(row, 'existingOrganization'),
@@ -342,9 +437,12 @@ export async function fetchSheetRows(
       sourceChecked: getVal(row, 'sourceChecked'),
       primarySource: getVal(row, 'primarySource'),
       verificationStatus: status,
+      actionDate: getVal(row, 'actionDate'),
       anyRemark: getVal(row, 'anyRemark'),
       l1Review: getVal(row, 'l1Review'),
       l1Comment: getVal(row, 'l1Comment'),
+      l1VerificationDate: getVal(row, 'l1VerificationDate'),
+      verifiedBy: getVal(row, 'verifiedBy'),
       l2Review: getVal(row, 'l2Review'),
       l2Comment: getVal(row, 'l2Comment'),
 
@@ -430,7 +528,13 @@ export async function checkRowConflict(
     sourceChecked: getCol('sourceChecked'),
     primarySource: getCol('primarySource'),
     verificationStatus: getCol('verificationStatus'),
+    actionDate: getCol('actionDate'),
     anyRemark: getCol('anyRemark'),
+    l1Review: getCol('l1Review'),
+    l1Comment: getCol('l1Comment'),
+    l1VerificationDate: getCol('l1VerificationDate'),
+    verifiedBy: getCol('verifiedBy'),
+    sentForUpdate: getCol('sentForUpdate'),
   };
 
   // Check against the snapshot captured when this record was loaded
@@ -456,24 +560,87 @@ export async function updateRecordInSheet(
   sheetName: string,
   rowIndex: number,
   headerMap: SheetHeaderMap,
-  updates: EditableFields
+  updates: EditableFields,
+  currentUserEmail?: string,
+  syncMode: 'all' | 'l0' | 'l1' = 'all'
 ): Promise<void> {
-  // Build batchUpdate data payload for exact cell ranges
+  // If actionDate is not set but status is marked Verified/Approved or Flagged, generate today's date
+  const statusLower = (updates.verificationStatus || '').toLowerCase();
+  const isMarked =
+    statusLower.includes('veri') ||
+    statusLower === 'approved' ||
+    statusLower.includes('flag') ||
+    statusLower.includes('reject');
+
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const l1ReviewVal = (updates.l1Review || '').trim();
+  const isL1Marked = l1ReviewVal !== '';
+
+  const resolvedUpdates: EditableFields = {
+    ...updates,
+    // Action Date is strictly for L0 action. Never overwrite or auto-set actionDate during L1 review actions.
+    actionDate: updates.actionDate !== undefined ? updates.actionDate : (isMarked && syncMode !== 'l1' ? todayStr : ''),
+    l1VerificationDate: isL1Marked ? (updates.l1VerificationDate || todayStr) : (updates.l1VerificationDate || ''),
+    verifiedBy: isL1Marked ? (updates.verifiedBy || currentUserEmail || '') : (updates.verifiedBy || ''),
+  };
+
+  // Build batchUpdate data payload for exact cell ranges based on syncMode
   const data: { range: string; values: string[][] }[] = [];
 
-  const fieldKeys: (keyof EditableFields)[] = [
-    'correctedDesignation',
-    'correctedCompany',
-    'correctedLinkedIn',
-    'correctedCity',
-    'correctedState',
-    'correctedCountry',
-    'correctedPincode',
-    'sourceChecked',
-    'primarySource',
-    'verificationStatus',
-    'anyRemark',
-  ];
+  let fieldKeys: (keyof EditableFields)[] = [];
+
+  if (syncMode === 'l0') {
+    // Only L0 fields are updated in the Google Sheet (never touch L1 columns)
+    fieldKeys = [
+      'correctedDesignation',
+      'correctedCompany',
+      'correctedLinkedIn',
+      'correctedCity',
+      'correctedState',
+      'correctedCountry',
+      'correctedPincode',
+      'sourceChecked',
+      'primarySource',
+      'verificationStatus',
+      'actionDate',
+      'anyRemark',
+      'sentForUpdate',
+    ];
+  } else if (syncMode === 'l1') {
+    // Only L1 fields are updated in the Google Sheet (never touch L0 columns)
+    fieldKeys = [
+      'l1Review',
+      'l1Comment',
+      'l1VerificationDate',
+      'verifiedBy',
+    ];
+  } else {
+    // 'all' updates all fields
+    fieldKeys = [
+      'correctedDesignation',
+      'correctedCompany',
+      'correctedLinkedIn',
+      'correctedCity',
+      'correctedState',
+      'correctedCountry',
+      'correctedPincode',
+      'sourceChecked',
+      'primarySource',
+      'verificationStatus',
+      'actionDate',
+      'anyRemark',
+      'l1Review',
+      'l1Comment',
+      'l1VerificationDate',
+      'verifiedBy',
+      'sentForUpdate',
+    ];
+  }
 
   for (const field of fieldKeys) {
     const colIdx = headerMap.fieldToColIndex[field];
@@ -481,32 +648,34 @@ export async function updateRecordInSheet(
       const colLetter = colIndexToA1(colIdx);
       data.push({
         range: `${sheetName}!${colLetter}${rowIndex}`,
-        values: [[updates[field] ?? '']],
+        values: [[resolvedUpdates[field] ?? '']],
       });
     }
   }
 
-  // Also sync final fields if columns exist in the sheet
-  const finalMap: Record<string, keyof EditableFields> = {
-    finalDesignation: 'correctedDesignation',
-    finalCompany: 'correctedCompany',
-    finalLinkedIn: 'correctedLinkedIn',
-    finalCity: 'correctedCity',
-    finalState: 'correctedState',
-    finalCountry: 'correctedCountry',
-    finalPincode: 'correctedPincode',
-  };
+  // Also sync final fields if columns exist in the sheet ONLY for L0 or all
+  if (syncMode !== 'l1') {
+    const finalMap: Record<string, keyof EditableFields> = {
+      finalDesignation: 'correctedDesignation',
+      finalCompany: 'correctedCompany',
+      finalLinkedIn: 'correctedLinkedIn',
+      finalCity: 'correctedCity',
+      finalState: 'correctedState',
+      finalCountry: 'correctedCountry',
+      finalPincode: 'correctedPincode',
+    };
 
-  for (const [finalCol, sourceCol] of Object.entries(finalMap)) {
-    const colIdx = headerMap.fieldToColIndex[finalCol];
-    if (colIdx !== undefined) {
-      const colLetter = colIndexToA1(colIdx);
-      const val = updates[sourceCol];
-      if (val) {
-        data.push({
-          range: `${sheetName}!${colLetter}${rowIndex}`,
-          values: [[val]],
-        });
+    for (const [finalCol, sourceCol] of Object.entries(finalMap)) {
+      const colIdx = headerMap.fieldToColIndex[finalCol];
+      if (colIdx !== undefined) {
+        const colLetter = colIndexToA1(colIdx);
+        const val = updates[sourceCol];
+        if (val) {
+          data.push({
+            range: `${sheetName}!${colLetter}${rowIndex}`,
+            values: [[val]],
+          });
+        }
       }
     }
   }
@@ -515,17 +684,24 @@ export async function updateRecordInSheet(
     spreadsheetId
   )}/values:batchUpdate`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      valueInputOption: 'USER_ENTERED',
-      data,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        valueInputOption: 'USER_ENTERED',
+        data,
+      }),
+    });
+  } catch (err: any) {
+    throw new Error(
+      `Failed to save changes to Google Sheet (${err.message || 'Failed to fetch'}). Your session may have expired. Please reconnect your account.`
+    );
+  }
 
   if (!res.ok) {
     const errText = await res.text();

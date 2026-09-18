@@ -13,11 +13,14 @@ import {
   Rows3,
   LayoutList,
   ArrowUpDown,
+  Calendar,
 } from 'lucide-react';
 import { AlumniRecord, FilterState, SortOption, SortField, SortOrder } from '../types';
 
 export const SORT_PRESETS: SortOption[] = [
   { field: 'default', order: 'asc', label: 'Sheet Row Order' },
+  { field: 'assignedDate', order: 'desc', label: 'Assigned Date (Newest First)' },
+  { field: 'assignedDate', order: 'asc', label: 'Assigned Date (Oldest First)' },
   { field: 'name', order: 'asc', label: 'Name (A → Z)' },
   { field: 'name', order: 'desc', label: 'Name (Z → A)' },
   { field: 'rollNumber', order: 'asc', label: 'Roll No (Ascending)' },
@@ -80,6 +83,20 @@ export const AlumniList: React.FC<AlumniListProps> = ({
       return 'bg-rose-50 text-rose-700 border-rose-200';
     }
     return 'bg-[#FAF0ED] text-[#A83B24] border-[#ECD5CC]';
+  };
+
+  const getL1BadgeClass = (l1Review: string) => {
+    const s = (l1Review || '').toLowerCase();
+    if (s === 'approved') {
+      return 'bg-emerald-50 text-emerald-800 border-emerald-300';
+    }
+    if (s.includes('sent')) {
+      return 'bg-amber-50 text-amber-800 border-amber-300';
+    }
+    if (s.includes('escala')) {
+      return 'bg-purple-50 text-purple-800 border-purple-300';
+    }
+    return 'bg-indigo-50 text-indigo-700 border-indigo-200';
   };
 
   const isCustomSortActive = sortOption.field !== 'default';
@@ -255,13 +272,25 @@ export const AlumniList: React.FC<AlumniListProps> = ({
                         {rec.fullName || 'Unnamed Alumni'}
                       </span>
                     </div>
-                    <span
-                      className={`text-[8px] font-medium px-1 py-0 rounded-full border shrink-0 ${getStatusBadgeClass(
-                        rec.verificationStatus
-                      )}`}
-                    >
-                      {rec.verificationStatus || 'Pending'}
-                    </span>
+                    <div className="flex items-center space-x-1 shrink-0">
+                      {rec.l1Review && (
+                        <span
+                          className={`text-[7.5px] font-bold px-1 py-0 rounded border shrink-0 ${getL1BadgeClass(
+                            rec.l1Review
+                          )}`}
+                          title={`L1 Review Decision: ${rec.l1Review}`}
+                        >
+                          L1: {rec.l1Review}
+                        </span>
+                      )}
+                      <span
+                        className={`text-[8px] font-medium px-1 py-0 rounded-full border shrink-0 ${getStatusBadgeClass(
+                          rec.verificationStatus
+                        )}`}
+                      >
+                        {rec.verificationStatus || 'Pending'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between text-[9px] text-slate-500 truncate">
@@ -269,9 +298,16 @@ export const AlumniList: React.FC<AlumniListProps> = ({
                       {[rec.existingDesignation, rec.existingOrganization].filter(Boolean).join(' @ ') ||
                         'No role recorded'}
                     </span>
-                    {hasAi && (
-                      <Sparkles className="w-2.5 h-2.5 text-[#A83B24] shrink-0 ml-1" title="AI Data available" />
-                    )}
+                    <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      {rec.assignedDate && (
+                        <span className="text-[8px] text-slate-400 font-mono" title={`Assigned: ${rec.assignedDate}`}>
+                          {rec.assignedDate}
+                        </span>
+                      )}
+                      {hasAi && (
+                        <Sparkles className="w-2.5 h-2.5 text-[#A83B24] shrink-0" title="AI Data available" />
+                      )}
+                    </div>
                   </div>
                 </button>
               );
@@ -305,13 +341,33 @@ export const AlumniList: React.FC<AlumniListProps> = ({
                       </span>
                     )}
                   </div>
-                  <span
-                    className={`text-[8.5px] font-medium px-1.5 py-0 rounded-full border shrink-0 ${getStatusBadgeClass(
-                      rec.verificationStatus
-                    )}`}
-                  >
-                    {rec.verificationStatus || 'Pending'}
-                  </span>
+                  <div className="flex items-center space-x-1 shrink-0">
+                    {rec.l1Review ? (
+                      <span
+                        className={`text-[8px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${getL1BadgeClass(
+                          rec.l1Review
+                        )}`}
+                        title={`L1 Review: ${rec.l1Review}`}
+                      >
+                        L1: {rec.l1Review}
+                      </span>
+                    ) : ((rec.verificationStatus || '').toLowerCase().includes('veri') ||
+                        (rec.verificationStatus || '').toLowerCase() === 'approved') ? (
+                      <span
+                        className="text-[8px] font-semibold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0"
+                        title="Ready for L1 Review"
+                      >
+                        L1 Awaiting
+                      </span>
+                    ) : null}
+                    <span
+                      className={`text-[8.5px] font-medium px-1.5 py-0 rounded-full border shrink-0 ${getStatusBadgeClass(
+                        rec.verificationStatus
+                      )}`}
+                    >
+                      {rec.verificationStatus || 'Pending'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Name: KEPT THE SAME SIZE */}
@@ -335,13 +391,24 @@ export const AlumniList: React.FC<AlumniListProps> = ({
                   )}
                 </div>
 
-                {/* Footer details: AI indicator & Degree: Decreased text size */}
+                {/* Footer details: AI indicator, Degree & Assigned Date */}
                 <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[8.5px] text-slate-400">
-                  <span className="truncate">
-                    {[rec.program, rec.department, rec.passingYear ? `'${rec.passingYear.slice(-2)}` : '']
-                      .filter(Boolean)
-                      .join(' • ') || 'No Academics'}
-                  </span>
+                  <div className="flex items-center space-x-1.5 truncate">
+                    <span className="truncate">
+                      {[rec.program, rec.department, rec.passingYear ? `'${rec.passingYear.slice(-2)}` : '']
+                        .filter(Boolean)
+                        .join(' • ') || 'No Academics'}
+                    </span>
+                    {rec.assignedDate && (
+                      <span
+                        title={`Assigned Date: ${rec.assignedDate}`}
+                        className="inline-flex items-center space-x-0.5 text-slate-500 bg-slate-100 px-1 py-0.2 rounded shrink-0 font-mono text-[8px]"
+                      >
+                        <Calendar className="w-2 h-2 text-slate-400" />
+                        <span>{rec.assignedDate}</span>
+                      </span>
+                    )}
+                  </div>
                   {hasAi && (
                     <span
                       title={`AI Confidence: ${rec.aiConfidence || 'N/A'}`}

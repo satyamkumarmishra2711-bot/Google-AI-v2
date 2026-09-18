@@ -12,6 +12,9 @@ export interface AlumniRecord {
   passingYear: string;
   ageApprox: string;
 
+  // Sent for Update
+  sentForUpdate?: string;
+
   // Existing Data (Reference)
   existingDesignation: string;
   existingOrganization: string;
@@ -48,9 +51,12 @@ export interface AlumniRecord {
   sourceChecked: string;
   primarySource: string;
   verificationStatus: 'Pending' | 'Verified' | 'Flagged' | 'Rejected' | string;
+  actionDate?: string;
   anyRemark: string;
   l1Review: string;
   l1Comment: string;
+  l1VerificationDate?: string;
+  verifiedBy?: string;
   l2Review: string;
   l2Comment: string;
 
@@ -69,7 +75,13 @@ export interface EditableFields {
   sourceChecked: string;
   primarySource: string;
   verificationStatus: string;
+  actionDate?: string;
   anyRemark: string;
+  l1Review?: string;
+  l1Comment?: string;
+  l1VerificationDate?: string;
+  verifiedBy?: string;
+  sentForUpdate?: string;
 }
 
 export interface SheetConfig {
@@ -86,6 +98,27 @@ export interface StatusCounts {
   rejected: number;
 }
 
+export interface L1ReviewCounts {
+  totalVerified: number;
+  pending: number;
+  approved: number;
+  sentBack: number;
+  escalated: number;
+}
+
+export interface TodayActionsCount {
+  total: number;
+  verified: number;
+  flagged: number;
+}
+
+export interface TodayL1ActionsCount {
+  total: number;
+  approved: number;
+  sentBack: number;
+  escalated: number;
+}
+
 export interface FilterState {
   searchQuery: string;
   status: string; // 'All' | 'Pending' | 'Verified' | 'Flagged' | 'Rejected'
@@ -95,6 +128,8 @@ export interface FilterState {
   primarySource: string;
   sourceChecked: string;
   aiConfidence: string;
+  l1Review?: string; // 'All' | 'Pending' | 'Approved' | 'Sent back' | 'Escalated'
+  appMode?: 'verifier' | 'l1_approver';
 }
 
 export interface ConflictDetails {
@@ -108,6 +143,7 @@ export interface ConflictDetails {
 
 export type SortField =
   | 'default'
+  | 'assignedDate'
   | 'name'
   | 'rollNumber'
   | 'passingYear'

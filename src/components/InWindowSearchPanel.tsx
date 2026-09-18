@@ -14,6 +14,7 @@ import {
   ArrowUpToLine,
   ArrowDownToLine,
 } from 'lucide-react';
+import { EditableFields } from '../types';
 
 interface InWindowSearchPanelProps {
   isOpen: boolean;
@@ -27,6 +28,10 @@ interface InWindowSearchPanelProps {
   onToggleTaller?: () => void;
   widthPercent?: number;
   onSetWidthPercent?: (pct: number) => void;
+  // Optional Form Handlers for compatibility
+  onApplyField?: (field: keyof EditableFields, value: string) => void;
+  onApplyMultipleFields?: (updates: Partial<EditableFields>) => void;
+  currentFormData?: EditableFields;
 }
 
 export const InWindowSearchPanel: React.FC<InWindowSearchPanelProps> = ({
@@ -527,20 +532,25 @@ export const InWindowSearchPanel: React.FC<InWindowSearchPanelProps> = ({
       </div>
 
       {/* Footer / Status bar */}
-      <div className="px-3 py-1 bg-slate-50 border-t border-slate-200 text-[10.5px] text-slate-500 flex items-center justify-between shrink-0">
-        <span className="flex items-center space-x-1 truncate max-w-[70%]">
-          <HelpCircle className="w-3 h-3 text-slate-400 shrink-0" />
-          <span className="truncate">Click search results or copy links directly into verification fields.</span>
-        </span>
-        <a
-          href={externalUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-blue-600 hover:underline font-medium inline-flex items-center space-x-1 shrink-0 ml-1"
-        >
-          <span>Open externally</span>
-          <ExternalLink className="w-2.5 h-2.5" />
-        </a>
+      <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200 text-[10.5px] text-slate-500 flex items-center justify-between shrink-0 gap-2">
+        <div className="flex items-center space-x-1.5 truncate">
+          <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span className="truncate">
+            Live search results for <strong className="text-slate-700">{alumniName}</strong>
+          </span>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0">
+          <a
+            href={externalUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline font-medium inline-flex items-center space-x-1"
+          >
+            <span>Open in new tab</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+        </div>
       </div>
     </div>
   );

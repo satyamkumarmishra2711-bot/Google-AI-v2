@@ -20,6 +20,8 @@ import {
   FilterState,
   SheetConfig,
   StatusCounts,
+  TodayActionsCount,
+  TodayL1ActionsCount,
   ConflictDetails,
   SortOption,
 } from './types';
@@ -27,6 +29,101 @@ import {
   loadSavedSheetConfig,
   persistSheetConfig,
 } from './config/sheetConfigStorage';
+
+const getTodayDateStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const isDateToday = (dateStr: string) => {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const clean = dateStr.trim();
+  if (!clean) return false;
+
+  const d = new Date();
+  const todayYear = d.getFullYear();
+  const todayMonth = d.getMonth();
+  const todayDate = d.getDate();
+  const todayISO = `${todayYear}-${String(todayMonth + 1).padStart(2, '0')}-${String(todayDate).padStart(2, '0')}`;
+
+  if (clean.startsWith(todayISO)) return true;
+
+  // DD/MM/YYYY or DD-MM-YYYY (with optional time)
+  const dmy = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmy) {
+    const day = parseInt(dmy[1], 10);
+    const month = parseInt(dmy[2], 10) - 1;
+    const year = parseInt(dmy[3], 10);
+    if (year === todayYear && month === todayMonth && day === todayDate) {
+      return true;
+    }
+  }
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  const ymd = clean.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (ymd) {
+    const year = parseInt(ymd[1], 10);
+    const month = parseInt(ymd[2], 10) - 1;
+    const day = parseInt(ymd[3], 10);
+    if (year === todayYear && month === todayMonth && day === todayDate) {
+      return true;
+    }
+  }
+
+  // General Date parse fallback
+  const parsed = Date.parse(clean);
+  if (!isNaN(parsed)) {
+    const parsedDate = new Date(parsed);
+    if (
+      parsedDate.getFullYear() === todayYear &&
+      parsedDate.getMonth() === todayMonth &&
+      parsedDate.getDate() === todayDate
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const loadTodayActionsMap = (): Record<string, { status: string; date: string }> => {
+  try {
+    const raw = localStorage.getItem('alumni_actions_today_v1');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const today = getTodayDateStr();
+    const valid: Record<string, { status: string; date: string }> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v && (v as any).date === today) {
+        valid[k] = v as any;
+      }
+    }
+    return valid;
+  } catch {
+    return {};
+  }
+};
+
+const loadTodayL1ActionsMap = (): Record<string, { l1Review: string; date: string }> => {
+  try {
+    const raw = localStorage.getItem('alumni_l1_actions_today_v1');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const today = getTodayDateStr();
+    const valid: Record<string, { l1Review: string; date: string }> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v && (v as any).date === today) {
+        valid[k] = v as any;
+      }
+    }
+    return valid;
+  } catch {
+    return {};
+  }
+};
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { AlumniList } from './components/AlumniList';
@@ -62,6 +159,84 @@ export default function App() {
     flagged: 0,
     rejected: 0,
   });
+
+  // Track actions (Verified or Flagged) marked today
+  const [localTodayActionsMap, setLocalTodayActionsMap] = useState<
+    Record<string, { status: string; date: string }>
+  >(loadTodayActionsMap);
+
+  // Track L1 actions (Approved, Sent back, Escalated) marked today
+  const [localTodayL1ActionsMap, setLocalTodayL1ActionsMap] = useState<
+    Record<string, { l1Review: string; date: string }>
+  >(loadTodayL1ActionsMap);
+
+  const todayActions = useMemo<TodayActionsCount>(() => {
+    const map: Record<string, { status: string; date: string }> = { ...localTodayActionsMap };
+    const today = getTodayDateStr();
+
+    // Calculate Actions Today strictly from sheet records matching Column "Action Date" (excluding L1 actions)
+    records.forEach((r) => {
+      const key = r.customId || r.rollNumber || String(r.rowIndex);
+      if (!map[key] && isDateToday(r.actionDate || '')) {
+        const s = (r.verificationStatus || '').toLowerCase();
+        if (s.includes('veri') || s === 'approved') {
+          map[key] = { status: 'Verified', date: today };
+        } else if (s.includes('flag') || s.includes('review') || s.includes('hold')) {
+          map[key] = { status: 'Flagged', date: today };
+        }
+      }
+    });
+
+    let verified = 0;
+    let flagged = 0;
+    for (const item of Object.values(map)) {
+      if (item.date === today) {
+        if (item.status === 'Verified') verified++;
+        else if (item.status === 'Flagged') flagged++;
+      }
+    }
+
+    return {
+      total: verified + flagged,
+      verified,
+      flagged,
+    };
+  }, [localTodayActionsMap, records]);
+
+  const todayL1Actions = useMemo<TodayL1ActionsCount>(() => {
+    const map: Record<string, { l1Review: string; date: string }> = { ...localTodayL1ActionsMap };
+    const today = getTodayDateStr();
+
+    // Calculate L1 Actions strictly from sheet records matching Column "L1 Verification Date"
+    records.forEach((r) => {
+      const key = r.customId || r.rollNumber || String(r.rowIndex);
+      if (!map[key] && isDateToday(r.l1VerificationDate || '')) {
+        const l1 = (r.l1Review || '').trim();
+        if (l1) {
+          map[key] = { l1Review: l1, date: today };
+        }
+      }
+    });
+
+    let approved = 0;
+    let sentBack = 0;
+    let escalated = 0;
+    for (const item of Object.values(map)) {
+      if (item.date === today) {
+        const s = (item.l1Review || '').toLowerCase();
+        if (s === 'approved') approved++;
+        else if (s.includes('sent')) sentBack++;
+        else if (s.includes('escala')) escalated++;
+      }
+    }
+
+    return {
+      total: approved + sentBack + escalated,
+      approved,
+      sentBack,
+      escalated,
+    };
+  }, [localTodayL1ActionsMap, records]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -182,10 +357,14 @@ export default function App() {
       const res = await googleSignIn();
       setUser(res.user);
       setToken(res.accessToken);
+      setAccessToken(res.accessToken);
       setToastMessage({
         text: `Signed in as ${res.user.displayName || res.user.email}`,
         type: 'success',
       });
+      if (sheetConfig.spreadsheetId && sheetConfig.sheetName) {
+        await loadSheetData(res.accessToken, sheetConfig);
+      }
     } catch (err: any) {
       console.error('Sign in failed:', err);
       setErrorMessage(err.message || 'Google sign-in failed. Please try again.');
@@ -246,12 +425,15 @@ export default function App() {
           errMsg.includes('401') ||
           errMsg.includes('unauthorized') ||
           errMsg.includes('invalid credentials') ||
-          errMsg.includes('token')
+          errMsg.includes('token') ||
+          errMsg.includes('failed to fetch') ||
+          errMsg.includes('unable to reach') ||
+          errMsg.includes('session may have expired')
         ) {
           setToken(null);
           setAccessToken(null);
           setErrorMessage(
-            'Google Sheets authorization expired. Please click "Sign in with Google" or "Reconnect" in the header.'
+            'Google Sheets session expired or authorization required. Please click "Reconnect with Google" to refresh access.'
           );
         } else {
           setErrorMessage(
@@ -333,6 +515,24 @@ export default function App() {
         if (statusFilter === 'Rejected' && !s.includes('reject') && !s.includes('invalid')) return false;
       }
 
+      // L1 Review filter (applies specifically to Verified records)
+      if (filters.l1Review) {
+        const l1Val = (rec.l1Review || '').toLowerCase().trim();
+        if (filters.l1Review === 'Pending') {
+          const isSentForUpdate =
+            (rec.sentForUpdate || '').toLowerCase().trim() === 'yes' ||
+            (rec.sentForUpdate || '').toLowerCase().trim() === 'y';
+          if (isSentForUpdate) return false;
+          if (l1Val !== '') return false;
+        } else if (filters.l1Review === 'Approved') {
+          if (l1Val !== 'approved') return false;
+        } else if (filters.l1Review === 'Sent back') {
+          if (!l1Val.includes('sent')) return false;
+        } else if (filters.l1Review === 'Escalated') {
+          if (!l1Val.includes('escala')) return false;
+        }
+      }
+
       // Dropdown filters
       if (progFilter && rec.program !== progFilter) return false;
       if (deptFilter && rec.department !== deptFilter) return false;
@@ -382,6 +582,37 @@ export default function App() {
     return [...filteredRecords].sort((a, b) => {
       let cmp = 0;
       switch (sortOption.field) {
+        case 'assignedDate': {
+          const parseDateToTime = (str: string): number => {
+            if (!str || !str.trim()) return 0;
+            const s = str.trim();
+            // Handle DD/MM/YYYY or DD-MM-YYYY
+            const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+            if (dmy) {
+              const day = parseInt(dmy[1], 10);
+              const month = parseInt(dmy[2], 10) - 1;
+              const year = parseInt(dmy[3], 10);
+              const hour = dmy[4] ? parseInt(dmy[4], 10) : 0;
+              const min = dmy[5] ? parseInt(dmy[5], 10) : 0;
+              const sec = dmy[6] ? parseInt(dmy[6], 10) : 0;
+              return new Date(year, month, day, hour, min, sec).getTime() || 0;
+            }
+            const t = Date.parse(s);
+            return isNaN(t) ? 0 : t;
+          };
+          const timeA = parseDateToTime(a.assignedDate);
+          const timeB = parseDateToTime(b.assignedDate);
+          if (timeA && timeB) {
+            cmp = timeA - timeB;
+          } else if (timeA && !timeB) {
+            cmp = 1;
+          } else if (!timeA && timeB) {
+            cmp = -1;
+          } else {
+            cmp = (a.assignedDate || '').localeCompare(b.assignedDate || '', undefined, { numeric: true });
+          }
+          break;
+        }
         case 'name':
           cmp = (a.fullName || '').localeCompare(b.fullName || '', undefined, { sensitivity: 'base' });
           break;
@@ -464,8 +695,12 @@ export default function App() {
     }
   };
 
-  // Core Verification Save Action directly to Google Sheet
-  const handleSaveVerification = async (updates: EditableFields, andNext: boolean) => {
+  // Core Verification Save Action directly to Google Sheet with L0 / L1 isolation
+  const handleSaveVerification = async (
+    updates: EditableFields,
+    andNext: boolean,
+    syncMode: 'all' | 'l0' | 'l1' = 'all'
+  ) => {
     if (!selectedRecord) return;
     if (!accessToken) {
       setErrorMessage('Google authorization is required to update Google Sheet.');
@@ -479,6 +714,32 @@ export default function App() {
 
     setIsSaving(true);
     setErrorMessage(null);
+
+    const email = user?.email || '';
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const isL1 = (updates.l1Review || '').trim() !== '';
+
+    const isAlreadyVerified =
+      (selectedRecord.verificationStatus || '').toLowerCase().includes('veri') ||
+      (selectedRecord.verificationStatus || '').toLowerCase() === 'approved';
+
+    let resolvedActionDate = updates.actionDate !== undefined ? updates.actionDate : (selectedRecord.actionDate || '');
+    let resolvedStatus = updates.verificationStatus !== undefined ? updates.verificationStatus : (selectedRecord.verificationStatus || 'Pending');
+
+    // If syncing L1 only, never alter L0 actionDate or verificationStatus
+    if (syncMode === 'l1' || isAlreadyVerified) {
+      resolvedActionDate = selectedRecord.actionDate || '';
+      resolvedStatus = selectedRecord.verificationStatus || 'Verified';
+    }
+
+    const finalUpdates: EditableFields = {
+      ...updates,
+      verificationStatus: resolvedStatus,
+      actionDate: resolvedActionDate,
+      l1VerificationDate: isL1 ? (updates.l1VerificationDate || todayStr) : (updates.l1VerificationDate || ''),
+      verifiedBy: isL1 ? (updates.verifiedBy || email) : (updates.verifiedBy || ''),
+    };
 
     try {
       // Step 1: Concurrency Conflict Check before updating
@@ -497,7 +758,7 @@ export default function App() {
           recordId: selectedRecord.customId || selectedRecord.rollNumber,
           fullName: selectedRecord.fullName,
           sheetValues: conflictCheck.currentSheetValues,
-          localValues: updates,
+          localValues: finalUpdates,
           onReload: () => {
             // Reload this record from fresh sheet values
             setRecords((prev) =>
@@ -527,9 +788,11 @@ export default function App() {
               sheetConfig.sheetName,
               conflictCheck.newRowIndex,
               headerMap,
-              updates
+              finalUpdates,
+              email,
+              syncMode
             );
-            applyLocalUpdate(updates, conflictCheck.newRowIndex);
+            applyLocalUpdate(finalUpdates, conflictCheck.newRowIndex, syncMode);
             setIsSaving(false);
             setToastMessage({
               text: `Overwritten and saved to Google Sheet row #${conflictCheck.newRowIndex}!`,
@@ -541,21 +804,30 @@ export default function App() {
         return;
       }
 
-      // Step 2: Update record in Google Sheet directly
+      // Step 2: Update record in Google Sheet directly with specified syncMode
       await updateRecordInSheet(
         accessToken,
         sheetConfig.spreadsheetId,
         sheetConfig.sheetName,
         conflictCheck.newRowIndex,
         headerMap,
-        updates
+        finalUpdates,
+        email,
+        syncMode
       );
 
       // Step 3: Apply optimistic update to local state & recompute counts
-      applyLocalUpdate(updates, conflictCheck.newRowIndex);
+      applyLocalUpdate(finalUpdates, conflictCheck.newRowIndex, syncMode);
+
+      const toastLabel =
+        syncMode === 'l0'
+          ? `L0 Sheet Sync successful for "${selectedRecord.fullName}"!`
+          : syncMode === 'l1'
+          ? `L1 Sheet Sync successful for "${selectedRecord.fullName}"!`
+          : `Saved "${selectedRecord.fullName}" directly to Google Sheet!`;
 
       setToastMessage({
-        text: `Saved "${selectedRecord.fullName}" directly to Google Sheet!`,
+        text: toastLabel,
         type: 'success',
       });
 
@@ -573,33 +845,79 @@ export default function App() {
     }
   };
 
-  const applyLocalUpdate = (updates: EditableFields, verifiedRowIndex: number) => {
+  const applyLocalUpdate = (
+    updates: EditableFields,
+    verifiedRowIndex: number,
+    syncMode: 'all' | 'l0' | 'l1' = 'all'
+  ) => {
     if (!selectedRecord) return;
 
     const oldStatus = selectedRecord.verificationStatus || 'Pending';
-    const newStatus = updates.verificationStatus || 'Pending';
+    const newStatus = syncMode === 'l1' ? oldStatus : (updates.verificationStatus || 'Pending');
 
-    // Update record in list
+    // Update record in list according to syncMode
     setRecords((prev) =>
       prev.map((r) => {
         if (r.customId === selectedRecord.customId) {
           const rawSnap: Record<string, string> = { ...(r._rawSnapshot || {}) };
           for (const [k, v] of Object.entries(updates)) {
-            rawSnap[k] = v;
+            if (syncMode === 'l1') {
+              if (['l1Review', 'l1Comment', 'l1VerificationDate', 'verifiedBy'].includes(k)) {
+                rawSnap[k] = v;
+              }
+            } else if (syncMode === 'l0') {
+              if (!['l1Review', 'l1Comment', 'l1VerificationDate', 'verifiedBy'].includes(k)) {
+                rawSnap[k] = v;
+              }
+            } else {
+              rawSnap[k] = v;
+            }
           }
-          return {
+
+          const updated: AlumniRecord = {
             ...r,
-            ...updates,
             rowIndex: verifiedRowIndex,
             _rawSnapshot: rawSnap,
           };
+
+          if (syncMode === 'l1') {
+            updated.l1Review = updates.l1Review;
+            updated.l1Comment = updates.l1Comment;
+            updated.l1VerificationDate = updates.l1VerificationDate;
+            updated.verifiedBy = updates.verifiedBy;
+          } else if (syncMode === 'l0') {
+            updated.correctedDesignation = updates.correctedDesignation;
+            updated.correctedCompany = updates.correctedCompany;
+            updated.correctedLinkedIn = updates.correctedLinkedIn;
+            updated.correctedCity = updates.correctedCity;
+            updated.correctedState = updates.correctedState;
+            updated.correctedCountry = updates.correctedCountry;
+            updated.correctedPincode = updates.correctedPincode;
+            updated.sourceChecked = updates.sourceChecked;
+            updated.primarySource = updates.primarySource;
+            updated.verificationStatus = updates.verificationStatus;
+            updated.actionDate = updates.actionDate;
+            updated.anyRemark = updates.anyRemark;
+            updated.sentForUpdate = updates.sentForUpdate;
+            if (updates.correctedDesignation) updated.finalDesignation = updates.correctedDesignation;
+            if (updates.correctedCompany) updated.finalCompany = updates.correctedCompany;
+            if (updates.correctedLinkedIn) updated.finalLinkedIn = updates.correctedLinkedIn;
+            if (updates.correctedCity) updated.finalCity = updates.correctedCity;
+            if (updates.correctedState) updated.finalState = updates.correctedState;
+            if (updates.correctedCountry) updated.finalCountry = updates.correctedCountry;
+            if (updates.correctedPincode) updated.finalPincode = updates.correctedPincode;
+          } else {
+            Object.assign(updated, updates);
+          }
+
+          return updated;
         }
         return r;
       })
     );
 
-    // Update status counts if status changed
-    if (oldStatus !== newStatus) {
+    // Update status counts if status changed (only during L0 or All sync)
+    if (syncMode !== 'l1' && oldStatus !== newStatus) {
       setCounts((prev) => {
         const next = { ...prev };
         const decKey = (s: string) => {
@@ -619,6 +937,72 @@ export default function App() {
         }
         return next;
       });
+    }
+
+    const recordKey =
+      selectedRecord.customId ||
+      selectedRecord.rollNumber ||
+      String(selectedRecord.rowIndex || verifiedRowIndex);
+    const today = getTodayDateStr();
+
+    // Update today's marked L0 actions (strictly if L0 or All)
+    if (syncMode !== 'l1') {
+      const lStatus = newStatus.toLowerCase();
+      const isActionDateToday = isDateToday(updates.actionDate || selectedRecord.actionDate || '');
+
+      if (isActionDateToday) {
+        if (lStatus.includes('veri') || lStatus === 'approved') {
+          setLocalTodayActionsMap((prev) => {
+            const next = { ...prev, [recordKey]: { status: 'Verified', date: today } };
+            try {
+              localStorage.setItem('alumni_actions_today_v1', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        } else if (lStatus.includes('flag') || lStatus.includes('review') || lStatus.includes('hold')) {
+          setLocalTodayActionsMap((prev) => {
+            const next = { ...prev, [recordKey]: { status: 'Flagged', date: today } };
+            try {
+              localStorage.setItem('alumni_actions_today_v1', JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+        }
+      } else {
+        setLocalTodayActionsMap((prev) => {
+          if (!prev[recordKey]) return prev;
+          const next = { ...prev };
+          delete next[recordKey];
+          try {
+            localStorage.setItem('alumni_actions_today_v1', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+    }
+
+    // Update today's marked L1 actions (Approved, Sent back, Escalated) strictly if L1 or All
+    if (syncMode !== 'l0') {
+      const l1Decision = updates.l1Review !== undefined ? updates.l1Review.trim() : (selectedRecord.l1Review || '').trim();
+      if (l1Decision) {
+        setLocalTodayL1ActionsMap((prev) => {
+          const next = { ...prev, [recordKey]: { l1Review: l1Decision, date: today } };
+          try {
+            localStorage.setItem('alumni_l1_actions_today_v1', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      } else if (updates.l1Review !== undefined && !l1Decision) {
+        setLocalTodayL1ActionsMap((prev) => {
+          if (!prev[recordKey]) return prev;
+          const next = { ...prev };
+          delete next[recordKey];
+          try {
+            localStorage.setItem('alumni_l1_actions_today_v1', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
     }
   };
 
@@ -642,17 +1026,49 @@ export default function App() {
 
       {/* Global Error Banner */}
       {errorMessage && (
-        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 text-xs text-rose-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5 text-xs text-rose-800 flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center space-x-2 min-w-0 flex-1">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
+            <span className="font-medium">{errorMessage}</span>
           </div>
-          <button
-            onClick={() => setErrorMessage(null)}
-            className="text-rose-600 hover:text-rose-900 font-semibold text-xs ml-4"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center space-x-2 shrink-0">
+            {(!accessToken || errorMessage.toLowerCase().includes('google') || errorMessage.toLowerCase().includes('session') || errorMessage.toLowerCase().includes('reconnect')) && (
+              <button
+                type="button"
+                id="btn-error-banner-reconnect"
+                onClick={handleSignIn}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Reconnect with Google</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsConfigModalOpen(true)}
+              className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 font-semibold text-xs rounded-md shadow-2xs transition-colors cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Configure Sheet</span>
+            </button>
+            {accessToken && (
+              <button
+                type="button"
+                onClick={() => loadSheetData(accessToken, sheetConfig)}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 font-semibold text-xs rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-rose-600 hover:text-rose-900 font-semibold text-xs ml-2 cursor-pointer underline"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -784,6 +1200,8 @@ export default function App() {
           {/* Left Sidebar: Live Status Counts & Secondary Filters (Resizable & Collapsible) */}
           <Sidebar
             counts={counts}
+            todayActions={todayActions}
+            todayL1Actions={todayL1Actions}
             filters={filters}
             onFilterChange={(newFilters) => setFilters((prev) => ({ ...prev, ...newFilters }))}
             onResetFilters={() =>
@@ -806,6 +1224,8 @@ export default function App() {
             width={sidebarWidth}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={handleToggleSidebarCollapse}
+            allRecords={records}
+            filteredRecords={sortedFilteredRecords}
           />
 
           {/* Draggable Divider between 1st Panel (Sidebar) and 2nd Panel (Alumni List) */}
@@ -860,6 +1280,7 @@ export default function App() {
             hasNext={currentFilteredIndex >= 0 && currentFilteredIndex < sortedFilteredRecords.length - 1}
             isSaving={isSaving}
             primarySourceOptions={primarySources}
+            userEmail={user?.email || ''}
           />
         </div>
       )}
